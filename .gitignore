@@ -1,0 +1,50 @@
+# Ignore Visual Studio temporary files, build results, and
+# user-specific files
+.vscode/
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Ignore build results
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+
+# Ignore NuGet packages
+*.nupkg
+# Uncomment if you have NuGet Package Restore enabled
+# packages/
+
+# Ignore Windows image file caches
+Thumbs.db
+ehthumbs.db
+
+# Ignore folder config file
+Desktop.ini
+
+# Ignore Recycle Bin used on file shares
+$RECYCLE.BIN/
+
+# Ignore Windows shortcuts
+*.lnk
+
+# Ignore .NET Core project files
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# Ignore .env files
+.env
+.env.*
+
+# Ignore Rider project files
+.idea/
+*.sln.iml
