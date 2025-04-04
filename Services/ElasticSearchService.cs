@@ -1,6 +1,7 @@
 ﻿using Elastic.Clients.Elasticsearch;
 using Elastic.Transport;
 using ErrorTool.Config;
+using ErrorTool.Interfaces;
 using ErrorTool.Models;
 using System;
 using System.Collections.Generic;
@@ -11,14 +12,14 @@ using System.Threading.Tasks;
 
 namespace ErrorTool.Services
 {
-    public class ElasticSearchService
+    public class ElasticSearchService : IElasticSearchService
     {
         private readonly ElasticsearchClient _client;
         private readonly ElasticConfig _config;
 
-        public ElasticSearchService(ElasticConfig config = null)
+        public ElasticSearchService(ElasticConfig config)
         {
-            _config = config ?? new ElasticConfig();
+            _config = config ?? throw new ArgumentNullException(nameof(config), "ElasticConfig cannot be null.");
 
             if (!_config.IsConfigured)
                 throw new InvalidOperationException("Elasticsearch is not configured. Check your .env file.");

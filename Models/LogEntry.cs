@@ -33,21 +33,4 @@ namespace ErrorTool.Models
         [JsonIgnore]
         public string? Parcels => Labels?.Parcels;
     }
-
-    public class ErrorInfo
-    {
-        [JsonPropertyName("message")]
-        public string? Message { get; set; }
-    }
-
-    public class Labels
-    {
-        [JsonPropertyName("Sender")]
-        public string? Sender { get; set; }
-        
-        [JsonPropertyName("InternalTesting")]
-        public string? InternalTesting { get; set; }
-        [JsonPropertyName("Parcels")]
-        public string? Parcels { get; set; }
-    }
 }

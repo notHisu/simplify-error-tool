@@ -1,4 +1,7 @@
 using DotNetEnv;
+using ErrorTool.Config;
+using ErrorTool.Interfaces;
+using ErrorTool.Services;
 
 namespace ErrorTool
 {
@@ -10,18 +13,34 @@ namespace ErrorTool
         [STAThread]
         static void Main()
         {
-            // To customize application configuration such as set high DPI settings or default font,
-            // see https://aka.ms/applicationconfiguration.
-            string envName = Environment.GetEnvironmentVariable("APP_ENVIRONMENT") ?? "Development";
-            string envFile = $".env.{envName}";
+            try
+            {
+                // Load environment variables
+                string envName = Environment.GetEnvironmentVariable("APP_ENVIRONMENT") ?? "Development";
+                string envFile = $".env.{envName}";
 
-            if (System.IO.File.Exists(envFile))
-                Env.TraversePath().Load(envFile);
-            else
-                Env.TraversePath().Load(".env");
+                if (System.IO.File.Exists(envFile))
+                    Env.TraversePath().Load(envFile);
+                else
+                    Env.TraversePath().Load(".env");
 
-            ApplicationConfiguration.Initialize();
-            Application.Run(new MainForm());
+                // Create configurations
+                var elasticConfig = new ElasticConfig();
+                var dbConfig = new DatabaseConfig();
+
+                // Create services 
+                IElasticSearchService elasticService = new ElasticSearchService(elasticConfig);
+                IParcelService parcelService = new ParcelService(dbConfig);
+
+                // Initialize application with services
+                ApplicationConfiguration.Initialize();
+                Application.Run(new MainForm(elasticService, parcelService));
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Fatal error starting application: {ex.Message}", 
+                    "Startup Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
     }
 }

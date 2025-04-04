@@ -38,6 +38,8 @@
             tpVan = new TabPage();
             dgvVan = new DataGridView();
             tpVanDetails = new TabPage();
+            txtConnection = new TextBox();
+            label1 = new Label();
             dgvVanDetails = new DataGridView();
             txtMailbox = new TextBox();
             txtUser = new TextBox();
@@ -140,6 +142,8 @@
             // 
             // tpVanDetails
             // 
+            tpVanDetails.Controls.Add(txtConnection);
+            tpVanDetails.Controls.Add(label1);
             tpVanDetails.Controls.Add(dgvVanDetails);
             tpVanDetails.Controls.Add(txtMailbox);
             tpVanDetails.Controls.Add(txtUser);
@@ -153,11 +157,29 @@
             tpVanDetails.Text = "VanDetails";
             tpVanDetails.UseVisualStyleBackColor = true;
             // 
+            // txtConnection
+            // 
+            txtConnection.Location = new Point(285, 15);
+            txtConnection.Name = "txtConnection";
+            txtConnection.ReadOnly = true;
+            txtConnection.Size = new Size(139, 23);
+            txtConnection.TabIndex = 6;
+            txtConnection.Text = "Placeholder";
+            // 
+            // label1
+            // 
+            label1.AutoSize = true;
+            label1.Location = new Point(207, 18);
+            label1.Name = "label1";
+            label1.Size = new Size(72, 15);
+            label1.TabIndex = 5;
+            label1.Text = "Connection:";
+            // 
             // dgvVanDetails
             // 
+            dgvVanDetails.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             dgvVanDetails.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
             dgvVanDetails.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize;
-            dgvVanDetails.Dock = DockStyle.Bottom;
             dgvVanDetails.Location = new Point(3, 93);
             dgvVanDetails.Name = "dgvVanDetails";
             dgvVanDetails.Size = new Size(787, 266);
@@ -165,7 +187,7 @@
             // 
             // txtMailbox
             // 
-            txtMailbox.Location = new Point(75, 57);
+            txtMailbox.Location = new Point(66, 57);
             txtMailbox.Name = "txtMailbox";
             txtMailbox.Size = new Size(100, 23);
             txtMailbox.TabIndex = 3;
@@ -173,7 +195,7 @@
             // 
             // txtUser
             // 
-            txtUser.Location = new Point(75, 15);
+            txtUser.Location = new Point(66, 15);
             txtUser.Name = "txtUser";
             txtUser.ReadOnly = true;
             txtUser.Size = new Size(100, 23);
@@ -241,5 +263,7 @@
         private Label lbMailbox;
         private DataGridView dgvVanDetails;
         private TextBox txtMailbox;
+        private TextBox txtConnection;
+        private Label label1;
     }
 }
