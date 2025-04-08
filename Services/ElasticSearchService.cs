@@ -3,6 +3,7 @@ using Elastic.Transport;
 using ErrorTool.Config;
 using ErrorTool.Interfaces;
 using ErrorTool.Models;
+using Microsoft.VisualBasic;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -24,10 +25,7 @@ namespace ErrorTool.Services
             if (!_config.IsConfigured)
                 throw new InvalidOperationException("Elasticsearch is not configured. Check your .env file.");
 
-            var settings = new ElasticsearchClientSettings(_config.CloudId, new ApiKey(_config.ApiKey))
-                .DisableAuditTrail()
-                .DisableDirectStreaming()
-                .PrettyJson();
+            var settings = new ElasticsearchClientSettings(_config.CloudId, new ApiKey(_config.ApiKey));
 
             _client = new ElasticsearchClient(settings);
         }
@@ -44,12 +42,6 @@ namespace ErrorTool.Services
                 .Sort(sort => sort.Field("@timestamp"))
                 .Query(q => q
                     .Bool(b => b
-                        .Must(m => m
-                            .Match(ma => ma
-                                .Field("log.level")
-                                .Query("Error")
-                            )
-                        )
                         .Filter(f => f
                             .Range(r => r
                                 .DateRange(d => d
@@ -57,16 +49,57 @@ namespace ErrorTool.Services
                                     .Gte(start.ToString("o"))
                                     .Lte(end.ToString("o"))
                                 )
-                            )
-                        )
-                        .MustNot(mn => mn
-                            .Match(m => m.Field("message").Query("Exception on Receiver"))
-                            .Match(m => m.Field("message").Query("T-FAULT"))
-                            .Match(m => m.Field("message").Query("AppInstanceTitle: Error email notification SEv2"))
-                            .Match(m => m.Field("message").Query("Health check sqlserver with status Unhealthy completed"))
-                            .Match(m => m.Field("message").Query("BackgroundService failed"))
-                            .Match(m => m.Field("message").Query("Hosting failed to start"))
-                            .Match(m => m.Field("message").Query("R-FAULT"))
+                            ),
+                            f => f.Bool(b => b
+                                .Filter(f => f
+                                    .MatchPhrase(m => m
+                                        .Field("log.level")
+                                        .Query("Error")
+                                    )
+                                )
+                            ),
+                            f => f.Bool(b =>
+                                    b.MustNot(m => m
+                                        .MatchPhrase(mp => mp
+                                            .Field("message")
+                                            .Query("T-FAULT")))
+                                ),
+                            f => f.Bool(b =>
+                                    b.MustNot(m => m
+                                        .MatchPhrase(mp => mp
+                                            .Field("message")
+                                            .Query("BackgroundService failed")))
+                                ),
+                            f => f.Bool(b =>
+                                    b.MustNot(m => m
+                                        .MatchPhrase(mp => mp
+                                            .Field("message")
+                                            .Query("Exception on Receiver")))
+                                ),
+                            f => f.Bool(b =>
+                                    b.MustNot(m => m
+                                        .MatchPhrase(mp => mp
+                                            .Field("message")
+                                            .Query("R-FAULT")))
+                                ),
+                            f => f.Bool(b =>
+                                    b.MustNot(m => m
+                                        .MatchPhrase(mp => mp
+                                            .Field("message")
+                                            .Query("Health check sqlserver with status Unhealthy completed")))
+                                ),
+                            f => f.Bool(b =>
+                                    b.MustNot(m => m
+                                        .MatchPhrase(mp => mp
+                                            .Field("message")
+                                            .Query("Hosting failed to start")))
+                                ),
+                            f => f.Bool(b =>
+                                    b.MustNot(m => m
+                                        .MatchPhrase(mp => mp
+                                            .Field("message")
+                                            .Query("AppInstanceTitle: Error email notification SEv2")))
+                                )
                         )
                     )
                 )
@@ -84,8 +117,6 @@ namespace ErrorTool.Services
         {
             var start = startDate ?? DateTime.Today;
             var end = endDate ?? DateTime.Now;
-
-            Debug.WriteLine($"Searching for van stuck parcels from {start} to {end}");
 
             var response = await _client.SearchAsync<VanStuckEntry>(s => s
                 .Index("simplify-prod*")
@@ -123,7 +154,7 @@ namespace ErrorTool.Services
             if (response.IsValidResponse)
             {
                 var result = new List<VanStuckViewModel>();
-                
+
                 foreach (var doc in response.Documents)
                 {
                     // Extract the JSON part from labels.Parcels field
@@ -131,13 +162,13 @@ namespace ErrorTool.Services
                     {
                         string parcelsJson = doc.Labels.Parcels;
                         Debug.WriteLine($"Found parcels JSON in labels.Parcels field");
-                        
+
                         try
                         {
                             // Parse the JSON
                             var vanStuckResponse = System.Text.Json.JsonSerializer.Deserialize<VanStuckResponse>(parcelsJson);
                             Debug.WriteLine($"Parsed VanStuckResponse with {vanStuckResponse?.ParcelInfoList?.Count ?? 0} items");
-                            
+
                             if (vanStuckResponse?.ParcelInfoList != null)
                             {
                                 foreach (var parcelInfo in vanStuckResponse.ParcelInfoList)
@@ -165,7 +196,7 @@ namespace ErrorTool.Services
                         Debug.WriteLine("No Labels.Parcels field found in document");
                     }
                 }
-                
+
                 Debug.WriteLine($"Returning {result.Count} van stuck view models");
                 return result;
             }

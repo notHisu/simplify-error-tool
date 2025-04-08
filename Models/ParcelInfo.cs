@@ -21,7 +21,6 @@ namespace ErrorTool.Models
         [JsonPropertyName("userName")]
         public string? UserName { get; set; }
         
-        // Helper properties for display
         [JsonIgnore]
         public int ParcelCount => ParcelIds?.Count ?? 0;
         

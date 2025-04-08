@@ -1,68 +1,190 @@
 using ErrorTool.Config;
 using ErrorTool.Interfaces;
 using ErrorTool.Models;
+using ErrorTool.Presenters;
 using ErrorTool.Services;
 using System.Diagnostics;
 
 namespace ErrorTool
 {
-    public partial class MainForm : Form
+    public partial class MainForm : Form, IErrorLogView, IVanStuckView, IVanDetailsView
     {
-        private readonly IElasticSearchService _elasticSearchService;
-        private readonly IParcelService _parcelService;
+        private readonly ErrorLogPresenter _errorLogPresenter;
+        private readonly VanStuckPresenter _vanStuckPresenter;
+        private readonly VanDetailsPresenter _vanDetailsPresenter;
+        
+        private List<VanStuckViewModel> _vanStuckItems = new List<VanStuckViewModel>();
+        private VanStuckViewModel? _selectedVanStuckItem;
 
         public MainForm(IElasticSearchService elasticSearchService, IParcelService parcelService)
         {
             InitializeComponent();
-
-            var config = new ElasticConfig();
-            var dbConfig = new DatabaseConfig();
-
-            _elasticSearchService = elasticSearchService ?? throw new ArgumentNullException(nameof(elasticSearchService), "ElasticSearchService cannot be null.");
-            _parcelService = parcelService ?? throw new ArgumentNullException(nameof(parcelService), "ParcelService cannot be null.");
-
+            
+            // Create presenters
+            _errorLogPresenter = new ErrorLogPresenter(this, elasticSearchService);
+            _vanStuckPresenter = new VanStuckPresenter(this, elasticSearchService);
+            _vanDetailsPresenter = new VanDetailsPresenter(this, parcelService);
+            
             ConfigureErrorDataGridView();
             ConfigureVanDataGridView();
             ConfigureVanDetailsGridView();
         }
-
-        private void HandleError(string title, string message)
+        
+        // IErrorLogView implementation
+        public void DisplayErrorLogs(List<LogEntry> logs)
+        {
+            dgvErrorLogs.DataSource = logs;
+        }
+        
+        public void ShowErrorMessage(string title, string message)
         {
             MessageBox.Show(message, title, MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
+        
+        public void SetLoadingState(bool isLoading)
+        {
+            btnFetchLog.Enabled = !isLoading;
+        }
+        
+        // IVanStuckView implementation
+        public void DisplayVanStuckItems(List<VanStuckViewModel> items)
+        {
+            _vanStuckItems = items;
+            dgvVan.DataSource = items;
+        }
+        
+        // IVanDetailsView implementation
+        public void DisplayParcelDetails(VanStuckViewModel model)
+        {
+            _selectedVanStuckItem = model;
+            txtUser.Text = model.UserName;
+            txtConnection.Text = model.ConnectionName;
+            txtMailbox.Text = model.MailboxId;
+            
+            dgvVanDetails.Rows.Clear();
+            foreach (var parcelId in model.RawParcelIds)
+            {
+                int rowIndex = dgvVanDetails.Rows.Add();
+                dgvVanDetails.Rows[rowIndex].Cells["ParcelId"].Value = parcelId;
+            }
+        }
+        
+        public void ShowParcelContent(string content)
+        {
+            var contentForm = new Form
+            {
+                Text = "Parcel Content",
+                Size = new Size(700, 500),
+                StartPosition = FormStartPosition.CenterParent
+            };
 
+            var textBox = new TextBox
+            {
+                Multiline = true,
+                ReadOnly = true,
+                Dock = DockStyle.Fill,
+                ScrollBars = ScrollBars.Both,
+                Text = content
+            };
+
+            contentForm.Controls.Add(textBox);
+            contentForm.ShowDialog();
+        }
+        
+        public void ShowMessage(string title, string message, MessageType type)
+        {
+            MessageBoxIcon icon = MessageBoxIcon.Information;
+            switch (type)
+            {
+                case MessageType.Error:
+                    icon = MessageBoxIcon.Error;
+                    break;
+                case MessageType.Warning:
+                    icon = MessageBoxIcon.Warning;
+                    break;
+            }
+            
+            MessageBox.Show(message, title, MessageBoxButtons.OK, icon);
+        }
+        
+        public string UserName => _selectedVanStuckItem?.UserName ?? string.Empty;
+        public string ConnectionName => _selectedVanStuckItem?.ConnectionName ?? string.Empty;
+        public string MailboxId => _selectedVanStuckItem?.MailboxId ?? string.Empty;
+        
+        // Event handlers
         private async void btnFetchLog_Click(object sender, EventArgs e)
+        {
+            await _errorLogPresenter.FetchErrorLogsAsync();
+            await _vanStuckPresenter.FetchVanStuckItemsAsync();
+        }
+        
+        private void DgvVan_CellClick(object? sender, DataGridViewCellEventArgs e)
         {
             try
             {
-                // Disable button during operation
-                btnFetchLog.Enabled = false;
-
-                var errorLogs = await _elasticSearchService.GetLogAsync();
-                var van = await _elasticSearchService.GetVanStuckLogsAsync();
-
-                foreach (var item in van)
+                if (e.RowIndex >= 0 && e.ColumnIndex >= 0)
                 {
-                    // Make sure the initial display is collapsed
-                    item.ParcelIds = string.Join(", ", item.RawParcelIds.Take(5)) +
-                        (item.RawParcelIds.Count > 5 ? $" and {item.RawParcelIds.Count - 5} more" : "");
+                    bool isParcelIdsColumn = dgvVan.Columns[e.ColumnIndex].DataPropertyName == "ParcelIds";
+                    
+                    if (isParcelIdsColumn && _vanStuckItems.Count > e.RowIndex)
+                    {
+                        var selectedRow = _vanStuckItems[e.RowIndex];
+                        if (selectedRow != null && selectedRow.RawParcelIds?.Count > 0)
+                        {
+                            DisplayParcelDetails(selectedRow);
+                            tcLogs.SelectedTab = tpVanDetails;
+                        }
+                    }
                 }
-
-                dgvErrorLogs.DataSource = errorLogs;
-                dgvVan.DataSource = van;
             }
             catch (Exception ex)
             {
-                HandleError("Fetch Error", $"Failed to retrieve logs: {ex.Message}");
-            }
-            finally
-            {
-                // Re-enable UI elements
-                btnFetchLog.Enabled = true;
-                // statusLabel.Text = "Ready";
+                Debug.WriteLine($"Error in DgvVan_CellClick: {ex.Message}");
             }
         }
-
+        
+        private async void DgvVanDetails_CellClick(object? sender, DataGridViewCellEventArgs e)
+        {
+            if (e.RowIndex < 0)
+                return;
+                
+            var dgvVanDetails = sender as DataGridView;
+            if (dgvVanDetails == null)
+                return;
+                
+            var parcelIdObj = dgvVanDetails.Rows[e.RowIndex].Cells["ParcelId"].Value;
+            if (parcelIdObj == null)
+                return;
+                
+            long parcelId = Convert.ToInt64(parcelIdObj);
+            
+            // Handle button clicks
+            if (e.ColumnIndex == dgvVanDetails.Columns["ViewDataColumn"].Index)
+            {
+                await _vanDetailsPresenter.ViewParcelDataAsync(parcelId);
+            }
+            else if (e.ColumnIndex == dgvVanDetails.Columns["ConfirmColumn"].Index)
+            {
+                var result = MessageBox.Show($"Are you sure you want to confirm Parcel ID: {parcelId}?",
+                    "Confirm Parcel", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+                    
+                if (result == DialogResult.Yes)
+                {
+                    await _vanDetailsPresenter.ConfirmParcelAsync(parcelId);
+                }
+            }
+            else if (e.ColumnIndex == dgvVanDetails.Columns["ProcessColumn"].Index)
+            {
+                var result = MessageBox.Show($"Are you sure you want to process file for Parcel ID: {parcelId}?",
+                    "Process Parcel File", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+                    
+                if (result == DialogResult.Yes)
+                {
+                    await _vanDetailsPresenter.ProcessParcelAsync(parcelId);
+                }
+            }
+        }
+        
         private void ConfigureVanDataGridView()
         {
             dgvVan.AutoGenerateColumns = false;
@@ -118,7 +240,6 @@ namespace ErrorTool
 
             dgvVan.Columns.Add(parcelIdsColumn);
 
-            // Configure the grid for variable row heights
             dgvVan.AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.AllCells;
 
             dgvVan.CellClick += DgvVan_CellClick;
@@ -177,14 +298,11 @@ namespace ErrorTool
 
         private void ConfigureVanDetailsGridView()
         {
-            // Configure the DataGridView for parcel details
             dgvVanDetails.AutoGenerateColumns = false;
             dgvVanDetails.ReadOnly = true;
 
-            // Clear existing columns
             dgvVanDetails.Columns.Clear();
 
-            // Add parcel ID column
             dgvVanDetails.Columns.Add(new DataGridViewTextBoxColumn
             {
                 Name = "ParcelId",
@@ -192,7 +310,6 @@ namespace ErrorTool
                 Width = 100
             });
 
-            // Add action button columns
             dgvVanDetails.Columns.Add(new DataGridViewButtonColumn
             {
                 Name = "ViewDataColumn",
@@ -220,215 +337,7 @@ namespace ErrorTool
                 Width = 80
             });
 
-            // Register the CellClick event handler
             dgvVanDetails.CellClick += DgvVanDetails_CellClick;
         }
-
-        private void DgvVan_CellClick(object? sender, DataGridViewCellEventArgs e)
-        {
-            try
-            {
-                // Check if it's a valid row
-                if (e.RowIndex >= 0 && e.ColumnIndex >= 0)
-                {
-                    // Get the column by its DataPropertyName instead of Name
-                    bool isParcelIdsColumn = dgvVan.Columns[e.ColumnIndex].DataPropertyName == "ParcelIds";
-
-                    if (isParcelIdsColumn)
-                    {
-                        var selectedRow = dgvVan.Rows[e.RowIndex].DataBoundItem as VanStuckViewModel;
-                        if (selectedRow != null && selectedRow.RawParcelIds?.Count > 0)
-                        {
-                            DisplayParcelDetails(selectedRow);
-                            tcLogs.SelectedTab = tpVanDetails;
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"Error in DgvVan_CellClick: {ex.Message}");
-            }
-        }
-
-        private void DisplayParcelDetails(VanStuckViewModel vanStuckModel)
-        {
-            if (vanStuckModel == null || vanStuckModel.RawParcelIds == null || !vanStuckModel.RawParcelIds.Any())
-                return;
-
-            // Find the DataGridView in the VanDetails tab
-            var dgvVanDetails = tpVanDetails.Controls.OfType<DataGridView>().FirstOrDefault();
-            if (dgvVanDetails == null)
-                return;
-
-            var txtUser = tpVanDetails.Controls.OfType<TextBox>().FirstOrDefault(t => t.Name == "txtUser");
-            if (txtUser == null)
-                return;
-            txtUser.Text = vanStuckModel.UserName;
-
-            txtConnection.Text = vanStuckModel.ConnectionName;
-
-            // Clear existing data
-            dgvVanDetails.Rows.Clear();
-
-            // Add each parcel ID as a row
-            foreach (var parcelId in vanStuckModel.RawParcelIds)
-            {
-                int rowIndex = dgvVanDetails.Rows.Add();
-                dgvVanDetails.Rows[rowIndex].Cells["ParcelId"].Value = parcelId;
-            }
-        }
-
-        private void DgvVanDetails_CellClick(object sender, DataGridViewCellEventArgs e)
-        {
-            if (e.RowIndex < 0)
-                return;
-
-            var dgvVanDetails = sender as DataGridView;
-            if (dgvVanDetails == null)
-                return;
-
-            var parcelId = dgvVanDetails.Rows[e.RowIndex].Cells["ParcelId"].Value;
-
-            // Handle button clicks
-            if (e.ColumnIndex == dgvVanDetails.Columns["ViewDataColumn"].Index)
-            {
-                ViewParcelDataAsync(parcelId);
-            }
-            else if (e.ColumnIndex == dgvVanDetails.Columns["ConfirmColumn"].Index)
-            {
-                ConfirmParcel(parcelId);
-            }
-            else if (e.ColumnIndex == dgvVanDetails.Columns["ProcessColumn"].Index)
-            {
-                ProcessParcelFile(parcelId);
-            }
-        }
-
-        private async Task ViewParcelDataAsync(object parcelId)
-        {
-            try
-            {
-                // Get the parent row to find the username and connection
-                var selectedRow = GetParentRowForParcelId(Convert.ToInt64(parcelId));
-                if (selectedRow == null)
-                {
-                    MessageBox.Show("Could not find parent information for this parcel.");
-                    return;
-                }
-
-                // Show loading indicator
-                using (var loadingForm = new Form())
-                {
-                    loadingForm.Text = "Loading";
-                    loadingForm.Size = new Size(300, 120);
-                    loadingForm.StartPosition = FormStartPosition.CenterParent;
-
-                    var label = new Label { Text = "Fetching parcel data...", Location = new Point(50, 20) };
-                    loadingForm.Controls.Add(label);
-
-                    var progress = new ProgressBar
-                    {
-                        Style = ProgressBarStyle.Marquee,
-                        Location = new Point(50, 50),
-                        Size = new Size(200, 20)
-                    };
-                    loadingForm.Controls.Add(progress);
-
-                    loadingForm.Show(this);
-
-                    try
-                    {
-                        // Use the service
-                        string content = await _parcelService.GetParcelContent(
-                            Convert.ToInt64(parcelId),
-                            selectedRow.UserName,
-                            selectedRow.ConnectionName);
-
-                        loadingForm.Close();
-
-                        // Display the content
-                        DisplayParcelContent(content);
-                    }
-                    catch
-                    {
-                        loadingForm.Close();
-                        throw;
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                HandleError("View Parcel Error", $"Failed to retrieve parcel data: {ex.Message}");
-            }
-        }
-
-        // Helper method to find the parent row
-        private VanStuckViewModel GetParentRowForParcelId(long parcelId)
-        {
-            if (dgvVan.DataSource is List<VanStuckViewModel> vanData)
-            {
-                return vanData.FirstOrDefault(row => row.RawParcelIds.Contains(parcelId));
-            }
-            return null;
-        }
-
-        // Helper method to display content
-        private void DisplayParcelContent(string content)
-        {
-            var contentForm = new Form
-            {
-                Text = "Parcel Content",
-                Size = new Size(700, 500),
-                StartPosition = FormStartPosition.CenterParent
-            };
-
-            var textBox = new TextBox
-            {
-                Multiline = true,
-                ReadOnly = true,
-                Dock = DockStyle.Fill,
-                ScrollBars = ScrollBars.Both,
-                Text = content
-            };
-
-            contentForm.Controls.Add(textBox);
-            contentForm.ShowDialog();
-        }
-
-        private void ConfirmParcel(object parcelId)
-        {
-            var result = MessageBox.Show($"Are you sure you want to confirm Parcel ID: {parcelId}?",
-                "Confirm Parcel", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
-
-            if (result == DialogResult.Yes)
-            {
-                // Implement actual confirmation logic here
-                MessageBox.Show($"Parcel ID: {parcelId} confirmed successfully",
-                    "Confirmation Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            }
-        }
-
-        private void ProcessParcelFile(object parcelId)
-        {
-            var result = MessageBox.Show($"Are you sure you want to process file for Parcel ID: {parcelId}?",
-                "Process Parcel File", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
-
-            if (result == DialogResult.Yes)
-            {
-                try
-                {
-                    // Implement actual file processing logic here
-
-                    MessageBox.Show($"Parcel ID: {parcelId} file processed successfully",
-                        "Processing Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                }
-                catch (Exception ex)
-                {
-                    HandleError("File Processing Error", $"Failed to process parcel file: {ex.Message}");
-                }
-            }
-        }
-
     }
 }

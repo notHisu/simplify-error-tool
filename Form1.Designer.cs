@@ -189,6 +189,7 @@
             // 
             txtMailbox.Location = new Point(66, 57);
             txtMailbox.Name = "txtMailbox";
+            txtMailbox.ReadOnly = true;
             txtMailbox.Size = new Size(100, 23);
             txtMailbox.TabIndex = 3;
             txtMailbox.Text = "Placeholder";
@@ -248,7 +249,6 @@
         #endregion
 
         private Button btnFetchLog;
-        private DataGridView dgvLogs;
         private DataGridView dgvVan;
         private MenuStrip menuStrip1;
         private ToolStripMenuItem fileToolStripMenuItem;

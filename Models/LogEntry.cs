@@ -20,7 +20,6 @@ namespace ErrorTool.Models
         [JsonPropertyName("labels")]
         public Labels? Labels { get; set; }
 
-        // Flattened properties for DataGridView
         [JsonIgnore]
         public string? ErrorMessage => Error?.Message;
 

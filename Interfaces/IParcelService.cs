@@ -8,8 +8,8 @@ namespace ErrorTool.Interfaces
 {
     public interface IParcelService
     {
-        Task<string> GetParcelContent(long parcelId, string userName, string connectionName);
-        Task<string> ConfirmParcel(long parcelId, string sessionId);
-        Task<bool> ProcessParcel(long parcelId);
+        Task<string?> GetParcelContent(long parcelId, string userName, string connectionName);
+        Task<string?> ConfirmParcel(long parcelId, string userName, string connectionName);
+        Task<string?> ProcessParcel(long parcelId, string mailBoxId);
     }
 }

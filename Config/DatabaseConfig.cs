@@ -33,10 +33,6 @@ namespace ErrorTool.Config
             ConnectionString = Env.GetString("SQL_CONNECTION_STRING");
         }
 
-        /// <summary>
-        /// Creates a new SQL connection using the configured connection string
-        /// </summary>
-        /// <returns>An open SqlConnection</returns>
         public SqlConnection CreateConnection()
         {
             if (!IsConfigured)
@@ -47,10 +43,7 @@ namespace ErrorTool.Config
             return connection;
         }
 
-        /// <summary>
-        /// Executes a SQL query and returns the results as a DataTable
-        /// </summary>
-        public DataTable ExecuteQuery(string sql, params SqlParameter[] parameters)
+        public async Task<DataTable> ExecuteQuery(string sql, params SqlParameter[] parameters)
         {
             using (var connection = CreateConnection())
             using (var command = new SqlCommand(sql, connection))
@@ -63,16 +56,13 @@ namespace ErrorTool.Config
                 using (var adapter = new SqlDataAdapter(command))
                 {
                     var table = new DataTable();
-                    adapter.Fill(table);
+                    await Task.Run(() => adapter.Fill(table));
                     return table;
                 }
             }
         }
 
-        /// <summary>
-        /// Executes a non-query SQL command (INSERT, UPDATE, DELETE) and returns the number of rows affected
-        /// </summary>
-        public int ExecuteNonQuery(string sql, params SqlParameter[] parameters)
+        public async Task<int> ExecuteNonQuery(string sql, params SqlParameter[] parameters)
         {
             using (var connection = CreateConnection())
             using (var command = new SqlCommand(sql, connection))
@@ -82,14 +72,11 @@ namespace ErrorTool.Config
                     command.Parameters.AddRange(parameters);
                 }
 
-                return command.ExecuteNonQuery();
+                return await command.ExecuteNonQueryAsync();
             }
         }
 
-        /// <summary>
-        /// Executes a SQL query and returns the first column of the first row
-        /// </summary>
-        public object ExecuteScalar(string sql, params SqlParameter[] parameters)
+        public async Task<object?> ExecuteScalar(string sql, params SqlParameter[] parameters)
         {
             using (var connection = CreateConnection())
             using (var command = new SqlCommand(sql, connection))
@@ -99,7 +86,7 @@ namespace ErrorTool.Config
                     command.Parameters.AddRange(parameters);
                 }
 
-                return command.ExecuteScalar();
+                return await command.ExecuteScalarAsync();
             }
         }
     }

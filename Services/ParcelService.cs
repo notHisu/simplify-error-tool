@@ -19,42 +19,73 @@ namespace ErrorTool.Services
             _dbConfig = dbConfig ?? throw new ArgumentNullException(nameof(dbConfig));
         }
 
-        public async Task<string> ConfirmParcel(long parcelId, string sessionId)
+        public async Task<string?> ConfirmParcel(long parcelId, string userName, string connectionName)
         {
             try
             {
-                // You may want to load this from config
-                string apiEndpoint = Env.GetString("PARCEL_DOWNLOAD_CONFIRM_URL");
-                string url = $"{apiEndpoint}?SessionId={Uri.EscapeDataString(sessionId)}&ParcelId={parcelId}";
+                string? userId = await GetUserIdAsync(userName);
+                if (string.IsNullOrEmpty(userId))
+                {
+                    throw new InvalidOperationException($"User not found: {userName}");
+                }
 
-                Debug.WriteLine($"Making API call to: {url}");
+                string? encodedApiKey = await GetApiKeyAsync(userId, connectionName);
+                if (string.IsNullOrEmpty(encodedApiKey))
+                {
+                    throw new InvalidOperationException($"API key not found for {userName} with connection {connectionName}");
+                }
+
+                string sessionId = Env.GetString("GLOBE_ELECTRIC_API_KEY");
+                if (string.IsNullOrEmpty(sessionId))
+                {
+                    sessionId = DecodeApiKey(encodedApiKey);
+                }
+
+                string apiEndpoint = Env.GetString("PARCEL_DOWNLOAD_CONFIRM_URL");
+                if (string.IsNullOrEmpty(apiEndpoint))
+                {
+                    throw new InvalidOperationException("Missing PARCEL_DOWNLOAD_CONFIRM_URL in configuration");
+                }
+
+                string url = $"{apiEndpoint}?SessionId={Uri.EscapeDataString(sessionId)}&ParcelId={parcelId}";
+                Debug.WriteLine($"Confirming parcel {parcelId} with URL: {url}");
 
                 using (var client = new HttpClient())
                 {
-                    // Set appropriate timeouts
                     client.Timeout = TimeSpan.FromSeconds(30);
 
-                    // Make the API call
-                    return await client.GetStringAsync(url);
+                    var response = await client.GetAsync(url);
+
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        var errorContent = await response.Content.ReadAsStringAsync();
+                        Debug.WriteLine($"Error response: {response.StatusCode}, Content: {errorContent}");
+                        throw new InvalidOperationException($"API returned error: {response.StatusCode} - {errorContent}");
+                    }
+
+                    var result = await response.Content.ReadAsStringAsync();
+                    Debug.WriteLine($"Confirm parcel successful: {result}");
+                    return result;
                 }
             }
             catch (Exception ex)
             {
+                Debug.WriteLine($"Exception in ConfirmParcel: {ex.Message}");
                 throw new InvalidOperationException($"Failed to confirm parcel: {ex.Message}", ex);
             }
         }
 
-        public async Task<string> GetParcelContent(long parcelId, string userName, string connectionName)
+        public async Task<string?> GetParcelContent(long parcelId, string userName, string connectionName)
         {
             try
             {
-                string userId = await GetUserIdAsync(userName);
+                string? userId = await GetUserIdAsync(userName);
                 if (string.IsNullOrEmpty(userId))
                 {
                     throw new InvalidOperationException($"User not found: {userName}");
                 }
                 
-                string encodedApiKey = await GetApiKeyAsync(userId, connectionName);
+                string? encodedApiKey = await GetApiKeyAsync(userId, connectionName);
                 if (string.IsNullOrEmpty(encodedApiKey))
                 {
                     throw new InvalidOperationException($"API key not found for {userName} with connection {connectionName}");
@@ -70,28 +101,74 @@ namespace ErrorTool.Services
 
                 string decodedContent = DecodeBase64(base64Content);
 
-                return decodedContent;
+                string parcelInfo = await GetParcelInfo(parcelId, sessionId);
+
+                return decodedContent + "\n\n\n\n\n" + parcelInfo;
 
             }
             catch (Exception ex)
             {
-                // Log the exception details
                 System.Diagnostics.Debug.WriteLine($"Error retrieving parcel content: {ex.Message}");
                 throw;
             }
         }
 
-        private async Task<string> GetUserIdAsync(string displayName)
+        public async Task<string?> ProcessParcel(long parcelId, string mailBoxId)
+        {
+            try
+            {
+                string apiEndpoint = Env.GetString("PARCEL_PROCESS_URL");
+                if (string.IsNullOrEmpty(apiEndpoint))
+                {
+                    throw new InvalidOperationException("Missing PARCEL_PROCESS_URL in configuration");
+                }
+
+                Debug.WriteLine($"Processing parcel {parcelId} for mailbox {mailBoxId}");
+
+                using (var client = new HttpClient())
+                {
+                    client.Timeout = TimeSpan.FromSeconds(30);
+
+                    var formContent = new FormUrlEncodedContent(new[]
+                    {
+                new KeyValuePair<string, string>("ParcelID", parcelId.ToString()),
+                new KeyValuePair<string, string>("MailBoxID", mailBoxId)
+            });
+
+                    Debug.WriteLine($"Sending POST request to {apiEndpoint}");
+                    var response = await client.PostAsync(apiEndpoint, formContent);
+
+
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        var errorContent = await response.Content.ReadAsStringAsync();
+                        Debug.WriteLine($"Error response: {response.StatusCode}, Content: {errorContent}");
+                        throw new InvalidOperationException($"API returned error: {response.StatusCode} - {errorContent}");
+                    }
+
+                    var result = await response.Content.ReadAsStringAsync();
+                    Debug.WriteLine($"Process parcel successful: {result}");
+                    return result;
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Exception in ProcessParcel: {ex.Message}");
+                throw new InvalidOperationException($"Failed to process parcel: {ex.Message}", ex);
+            }
+        }
+
+        private async Task<string?> GetUserIdAsync(string displayName)
         {
             // Use _dbConfig to execute SQL query
             string query = "SELECT Id FROM [User] WHERE DisplayName = @DisplayName";
             var parameter = new Microsoft.Data.SqlClient.SqlParameter("@DisplayName", displayName);
             
-            var result = await ExecuteScalarQueryAsync(query, parameter);
+            var result = await _dbConfig.ExecuteScalar(query, parameter);
             return result?.ToString();
         }
 
-        private async Task<string> GetApiKeyAsync(string userId, string connectionName)
+        private async Task<string?> GetApiKeyAsync(string userId, string connectionName)
         {
             string query = "SELECT ApiKey FROM IntegrationConnection WHERE CreatedBy = @CreatedBy AND Name = @Name";
             var parameters = new[] {
@@ -99,33 +176,14 @@ namespace ErrorTool.Services
                 new Microsoft.Data.SqlClient.SqlParameter("@Name", connectionName)
             };
             
-            var result = await ExecuteScalarQueryAsync(query, parameters);
+            var result = await _dbConfig.ExecuteScalar(query, parameters);
             return result?.ToString();
-        }
-
-        private async Task<object> ExecuteScalarQueryAsync(string sql, params Microsoft.Data.SqlClient.SqlParameter[] parameters)
-        {
-            using (var connection = new Microsoft.Data.SqlClient.SqlConnection(_dbConfig.ConnectionString))
-            {
-                await connection.OpenAsync();
-                
-                using (var command = new Microsoft.Data.SqlClient.SqlCommand(sql, connection))
-                {
-                    if (parameters != null)
-                    {
-                        command.Parameters.AddRange(parameters);
-                    }
-                    
-                    return await command.ExecuteScalarAsync();
-                }
-            }
         }
 
         private string DecodeApiKey(string encodedApiKey)
         {
             try
             {
-                // Assuming the ApiKey is Base64 encoded
                 byte[] bytes = Convert.FromBase64String(encodedApiKey);
                 return Encoding.UTF8.GetString(bytes);
             }
@@ -139,7 +197,6 @@ namespace ErrorTool.Services
         {
             try
             {
-                // You may want to load this from config
                 string apiEndpoint = Env.GetString("PARCEL_DOWNLOAD_NO_UPDATE_URL");
                 string url = $"{apiEndpoint}?SessionId={Uri.EscapeDataString(sessionId)}&ParcelId={parcelId}";
 
@@ -147,10 +204,8 @@ namespace ErrorTool.Services
 
                 using (var client = new HttpClient())
                 {
-                    // Set appropriate timeouts
                     client.Timeout = TimeSpan.FromSeconds(30);
                     
-                    // Make the API call
                     return await client.GetStringAsync(url);
                 }
             }
@@ -167,24 +222,20 @@ namespace ErrorTool.Services
                 var doc = new System.Xml.XmlDocument();
                 doc.LoadXml(xml);
                 
-                // Get the root element
                 var root = doc.DocumentElement;
                 if (root == null)
                 {
                     throw new InvalidOperationException("XML document has no root element");
                 }
                 
-                // Extract the default namespace from the root element
                 string defaultNamespace = root.GetAttribute("xmlns");
                 
-                // Create namespace manager and add the namespace if it exists
                 var nsManager = new System.Xml.XmlNamespaceManager(doc.NameTable);
                 
                 if (!string.IsNullOrEmpty(defaultNamespace))
                 {
                     nsManager.AddNamespace("ns", defaultNamespace);
                     
-                    // Try to select the Content node with the extracted namespace
                     var contentNode = doc.SelectSingleNode("//ns:Content", nsManager);
                     if (contentNode != null)
                     {
@@ -192,9 +243,6 @@ namespace ErrorTool.Services
                     }
                 }
                 
-                // Fallback options if namespace approach doesn't work
-                
-                // Try getting the default namespace from the root element's namespace URI
                 if (!string.IsNullOrEmpty(root.NamespaceURI))
                 {
                     nsManager = new System.Xml.XmlNamespaceManager(doc.NameTable);
@@ -207,7 +255,6 @@ namespace ErrorTool.Services
                     }
                 }
                 
-                // Try without any namespace as a last resort
                 var contentNodeNoNs = doc.SelectSingleNode("//Content");
                 if (contentNodeNoNs != null)
                 {
@@ -235,9 +282,24 @@ namespace ErrorTool.Services
             }
         }
 
-        public Task<bool> ProcessParcel(long parcelId)
+        private async Task<string> GetParcelInfo(long parcelId, string sessionId)
         {
-            throw new NotImplementedException();
+            try
+            {
+                string apiEndpoint = Env.GetString("PARCEL_INFO_URL");
+                string url = $"{apiEndpoint}?SessionId={Uri.EscapeDataString(sessionId)}&ParcelId={parcelId}";
+                Debug.WriteLine($"Making API call to: {url}");
+                using (var client = new HttpClient())
+                {
+                    client.Timeout = TimeSpan.FromSeconds(30);
+
+                    return await client.GetStringAsync(url);
+                }
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"Failed to retrieve parcel data: {ex.Message}", ex);
+            }
         }
     }
 }
