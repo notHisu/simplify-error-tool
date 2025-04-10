@@ -81,12 +81,12 @@ namespace ErrorTool.Presenters
         {
             try
             {
-                //string content = await _parcelService.GetParcelContent(
-                //    parcelId,
-                //    _view.UserName,
-                //    _view.ConnectionName);
+                string? content = await _parcelService.GetParcelContent(
+                    parcelId,
+                    _view.UserName,
+                    _view.ConnectionName);
 
-                string content = "Sample content for parcel ID: " + parcelId; // Placeholder for actual content retrieval
+                //string content = "Sample content for parcel ID: " + parcelId; // Placeholder for actual content retrieval
 
                 _view.ShowParcelContent(content);
             }
@@ -130,7 +130,7 @@ namespace ErrorTool.Presenters
                         MessageType.Error);
                     return;
                 }
-                
+
                 //var result = await _parcelService.ProcessParcel(
                 //    parcelId,
                 //    _view.MailboxId);
